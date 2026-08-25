@@ -5,11 +5,26 @@ import (
 
 	"github.com/opencost/opencost/core/pkg/clustercache"
 	coreenv "github.com/opencost/opencost/core/pkg/env"
+	"github.com/opencost/opencost/core/pkg/opencost"
 	"github.com/opencost/opencost/core/pkg/storage"
 	"github.com/opencost/opencost/pkg/config"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 )
+
+func TestGetClusterPropertiesDetectsYandexBeforeGCEMetadata(t *testing.T) {
+	node := &clustercache.Node{
+		SpecProviderID: "yandex://fhm-test-node",
+		Labels:         map[string]string{"topology.kubernetes.io/zone": "ru-central1-a"},
+	}
+	properties := getClusterProperties(node)
+	if properties.provider != opencost.YandexProvider {
+		t.Fatalf("provider = %q, want %q", properties.provider, opencost.YandexProvider)
+	}
+	if properties.region != "ru-central1" {
+		t.Fatalf("region = %q, want ru-central1", properties.region)
+	}
+}
 
 func TestParseLocalDiskID(t *testing.T) {
 	tests := map[string]struct {

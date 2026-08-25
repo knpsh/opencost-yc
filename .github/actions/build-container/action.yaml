@@ -11,6 +11,10 @@ inputs:
     release_version:
         required: true
         type: string
+    go_version:
+        required: false
+        default: stable
+        type: string
     GITHUB_TOKEN:
         required: true
         type: string
@@ -33,7 +37,7 @@ runs:
       - name: Install Go
         uses: actions/setup-go@v5
         with:
-          go-version: 'stable'
+          go-version: ${{ inputs.go_version }}
 
       - name: Set up just
         uses: extractions/setup-just@v2

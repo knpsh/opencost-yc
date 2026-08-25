@@ -199,6 +199,9 @@ const OVHProvider = "OVH"
 // STACKITProvider describes the provider STACKIT
 const STACKITProvider = "STACKIT"
 
+// YandexProvider describes the provider Yandex Cloud.
+const YandexProvider = "Yandex"
+
 // NilProvider describes unknown provider
 const NilProvider = "-"
 
@@ -225,6 +228,8 @@ func ParseProvider(str string) string {
 		return OVHProvider
 	case "stackit", "ske":
 		return STACKITProvider
+	case "yandex", "yandex cloud", "yc", "mks":
+		return YandexProvider
 	default:
 		return NilProvider
 	}

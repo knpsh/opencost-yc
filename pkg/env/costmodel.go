@@ -40,6 +40,13 @@ const (
 
 	DigitalOceanAccessTokenEnvVar = "DIGITALOCEAN_ACCESS_TOKEN"
 
+	YandexAPIEndpointEnvVar            = "YC_API_ENDPOINT"
+	YandexBillingCurrencyEnvVar        = "YC_BILLING_CURRENCY"
+	YandexBillingAccountIDEnvVar       = "YC_BILLING_ACCOUNT_ID"
+	YandexServiceAccountKeyFileEnvVar  = "YC_SERVICE_ACCOUNT_KEY_FILE"
+	YandexSKUMappingFileEnvVar         = "YC_SKU_MAPPING_FILE"
+	YandexPricingRefreshIntervalEnvVar = "YC_PRICING_REFRESH_INTERVAL"
+
 	// Azure rate card filter environment variables
 
 	// Currently being used for OCI and DigitalOcean

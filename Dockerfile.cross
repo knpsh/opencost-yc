@@ -6,7 +6,7 @@ ARG	commit=HEAD
 LABEL org.opencontainers.image.description="Cross-cloud cost allocation models for Kubernetes workloads"
 LABEL org.opencontainers.image.documentation=https://opencost.io/docs/
 LABEL org.opencontainers.image.licenses=Apache-2.0
-LABEL org.opencontainers.image.source=https://github.com/opencost/opencost
+LABEL org.opencontainers.image.source=https://github.com/knpsh/opencost-yc
 LABEL org.opencontainers.image.title=kubecost-cost-model
 LABEL org.opencontainers.image.url=https://opencost.io
 
@@ -25,6 +25,7 @@ ADD --chmod=500 ./configs/alibaba.json /models/alibaba.json
 ADD --chmod=500 ./configs/oracle.json /models/oracle.json
 ADD --chmod=500 ./configs/otc.json /models/otc.json
 ADD --chmod=500 ./configs/stackit.json /models/stackit.json
+ADD --chmod=500 ./configs/yandex.json /models/yandex.json
 RUN chown -R 1001:1001 /models
 
 COPY ${binarypath} /go/bin/app

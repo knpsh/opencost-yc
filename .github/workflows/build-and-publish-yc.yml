@@ -1,0 +1,60 @@
+name: Build and Publish Yandex Cloud Release
+
+on:
+  push:
+    tags:
+      - "yc-v[0-9]+.[0-9]+.[0-9]+-[0-9]+"
+
+permissions: {}
+
+concurrency:
+  group: build-opencost-yc-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build-and-publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Check out tagged source
+        uses: actions/checkout@v6.0.2
+
+      - name: Derive release version
+        id: version
+        shell: bash
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          if [[ ! "$RELEASE_TAG" =~ ^yc-v([0-9]+\.[0-9]+\.[0-9]+)-([0-9]+)$ ]]; then
+            echo "unsupported release tag: $RELEASE_TAG" >&2
+            exit 1
+          fi
+          echo "value=${BASH_REMATCH[1]}-yc.${BASH_REMATCH[2]}" >> "$GITHUB_OUTPUT"
+          echo "short_sha=$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Build and publish multi-architecture image
+        uses: ./.github/actions/build-container
+        with:
+          actor: ${{ github.actor }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          image_tag: ghcr.io/knpsh/opencost-yc:sha-${{ steps.version.outputs.short_sha }}
+          release_version: ${{ steps.version.outputs.value }}
+          go_version: "1.26.4"
+
+      - name: Install crane
+        uses: imjasonh/setup-crane@v0.6
+
+      - name: Publish immutable release tag
+        env:
+          SHA_IMAGE: ghcr.io/knpsh/opencost-yc:sha-${{ steps.version.outputs.short_sha }}
+          RELEASE_IMAGE: ghcr.io/knpsh/opencost-yc:${{ steps.version.outputs.value }}
+        run: crane copy "$SHA_IMAGE" "$RELEASE_IMAGE"
+
+      - name: Verify both tags resolve to one manifest
+        env:
+          SHA_IMAGE: ghcr.io/knpsh/opencost-yc:sha-${{ steps.version.outputs.short_sha }}
+          RELEASE_IMAGE: ghcr.io/knpsh/opencost-yc:${{ steps.version.outputs.value }}
+        run: |
+          test "$(crane digest "$SHA_IMAGE")" = "$(crane digest "$RELEASE_IMAGE")"

@@ -22,6 +22,7 @@ import (
 	"github.com/opencost/opencost/pkg/cloud/ovh"
 	"github.com/opencost/opencost/pkg/cloud/scaleway"
 	"github.com/opencost/opencost/pkg/cloud/stackit"
+	"github.com/opencost/opencost/pkg/cloud/yandex"
 
 	"github.com/opencost/opencost/core/pkg/opencost"
 	"github.com/opencost/opencost/core/pkg/util"
@@ -117,6 +118,8 @@ func NewProvider(cache clustercache.ClusterCache, apiKey string, config *config.
 			cp.configFileName = "ovh.json"
 		case opencost.STACKITProvider:
 			cp.configFileName = "stackit.json"
+		case opencost.YandexProvider:
+			cp.configFileName = "yandex.json"
 		case opencost.CSVProvider:
 			cp.configFileName = "default.json"
 		}
@@ -227,6 +230,9 @@ func NewProvider(cache clustercache.ClusterCache, apiKey string, config *config.
 			ClusterAccountID: cp.accountID,
 			Config:           NewProviderConfig(config, cp.configFileName),
 		}, nil
+	case opencost.YandexProvider:
+		log.Info("Found Yandex Cloud provider ID, using Yandex Cloud Provider")
+		return yandex.New(cache, NewProviderConfig(config, cp.configFileName), cp.region, cp.accountID)
 	case opencost.DigitalOceanProvider:
 		log.Info("Detected DigitalOcean, using DOKS")
 		return &digitalocean.DOKS{
@@ -276,8 +282,17 @@ func getClusterProperties(node *clustercache.Node) clusterProperties {
 		return cp
 	}
 
-	// The second conditional is mainly if you're running opencost outside of GCE, say in a local environment.
-	if metadata.OnGCE() || strings.HasPrefix(providerID, "gce") {
+	// Yandex Cloud exposes a GCE-compatible metadata service, so its provider ID
+	// must be checked before metadata.OnGCE().
+	if strings.HasPrefix(providerID, "yandex://") {
+		log.Debug("using Yandex Cloud provider")
+		cp.provider = opencost.YandexProvider
+		cp.configFileName = "yandex.json"
+		if cp.region == "" {
+			zone, _ := util.GetZone(node.Labels)
+			cp.region = yandex.RegionFromZone(zone)
+		}
+	} else if metadata.OnGCE() || strings.HasPrefix(providerID, "gce") {
 		log.Debug("using GCP provider")
 		cp.provider = opencost.GCPProvider
 		cp.configFileName = "gcp.json"
