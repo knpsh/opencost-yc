@@ -32,6 +32,9 @@ const (
 	serviceAccountCheckName = "Yandex Cloud service account key"
 	preemptibleLabel        = "yandex.cloud/preemptible"
 	coreFractionLabel       = "yandex.cloud/core-fraction"
+	nvidiaGPUResource       = "nvidia.com/gpu"
+	nvidiaGPUCountLabel     = "nvidia.com/gpu.count"
+	nvidiaGPUReplicasLabel  = "nvidia.com/gpu.replicas"
 )
 
 type Yandex struct {
@@ -156,11 +159,13 @@ type yandexKey struct {
 	preemptible  bool
 	vcpu         float64
 	ramBytes     int64
+	gpuType      string
+	gpuCount     int
 }
 
 func (k *yandexKey) ID() string      { return k.providerID }
-func (k *yandexKey) GPUType() string { return "" }
-func (k *yandexKey) GPUCount() int   { return 0 }
+func (k *yandexKey) GPUType() string { return k.gpuType }
+func (k *yandexKey) GPUCount() int   { return k.gpuCount }
 func (k *yandexKey) Features() string {
 	return fmt.Sprintf("%s,%s,%d,%t", k.region, k.platform, k.coreFraction, k.preemptible)
 }
@@ -191,11 +196,13 @@ func (y *Yandex) GetKey(labels map[string]string, node *clustercache.Node) model
 		platform:     platform.Platform,
 		coreFraction: coreFraction,
 		preemptible:  strings.EqualFold(labels[preemptibleLabel], "true"),
+		gpuType:      platform.GPUType,
 	}
 	if node != nil {
 		key.providerID = node.SpecProviderID
 		key.vcpu = node.Status.Capacity.Cpu().AsApproximateFloat64()
 		key.ramBytes = node.Status.Capacity.Memory().Value()
+		key.gpuCount = physicalGPUCount(labels, node)
 		if key.region == "" {
 			zone, _ := util.GetZone(node.Labels)
 			key.region = RegionFromZone(zone)
@@ -220,19 +227,34 @@ func (y *Yandex) NodePricing(key models.Key) (*models.Node, models.PricingMetada
 	y.mu.RLock()
 	cpuPrice, cpuOK := y.prices[skus.CPU]
 	ramPrice, ramOK := y.prices[skus.RAM]
+	gpuPrice, gpuOK := y.prices[skus.GPU]
 	y.mu.RUnlock()
 	if !cpuOK || !ramOK {
 		return nil, meta, fmt.Errorf("Yandex Cloud: mapped node prices are unavailable; refresh the Billing SKU catalog")
 	}
+	if yk.gpuType != "" {
+		if skus.GPU == "" {
+			return nil, meta, fmt.Errorf("Yandex Cloud: GPU platform %s has no GPU SKU mapping", yk.platform)
+		}
+		if yk.gpuCount <= 0 {
+			return nil, meta, fmt.Errorf("Yandex Cloud: GPU platform %s has no physical GPU capacity in Kubernetes metadata", yk.platform)
+		}
+		if !gpuOK {
+			return nil, meta, fmt.Errorf("Yandex Cloud: mapped GPU price is unavailable; refresh the Billing SKU catalog")
+		}
+	}
 	ramGiB := float64(yk.ramBytes) / (1024 * 1024 * 1024)
 	total := yk.vcpu*cpuPrice.Hourly + ramGiB*ramPrice.Hourly
+	if yk.gpuType != "" {
+		total += float64(yk.gpuCount) * gpuPrice.Hourly
+	}
 	usageType := "regular"
 	pricingType := models.Api
 	if yk.preemptible {
 		usageType = "preemptible"
 		pricingType = models.Spot
 	}
-	return &models.Node{
+	result := &models.Node{
 		Cost:         formatPrice(total),
 		VCPU:         formatPrice(yk.vcpu),
 		VCPUCost:     formatPrice(cpuPrice.Hourly),
@@ -244,7 +266,39 @@ func (y *Yandex) NodePricing(key models.Key) (*models.Node, models.PricingMetada
 		Region:       yk.region,
 		ProviderID:   yk.providerID,
 		PricingType:  pricingType,
-	}, meta, nil
+	}
+	if yk.gpuType != "" {
+		result.GPU = strconv.Itoa(yk.gpuCount)
+		result.GPUName = yk.gpuType
+		result.GPUCost = formatPrice(gpuPrice.Hourly)
+	}
+	return result, meta, nil
+}
+
+func physicalGPUCount(labels map[string]string, node *clustercache.Node) int {
+	lookup := func(name string) string {
+		if value := strings.TrimSpace(labels[name]); value != "" {
+			return value
+		}
+		if node != nil {
+			return strings.TrimSpace(node.Labels[name])
+		}
+		return ""
+	}
+	if lookup(nvidiaGPUReplicasLabel) != "" {
+		count, err := strconv.Atoi(lookup(nvidiaGPUCountLabel))
+		if err == nil && count > 0 {
+			return count
+		}
+		return 0
+	}
+	if node == nil {
+		return 0
+	}
+	if quantity, ok := node.Status.Capacity[nvidiaGPUResource]; ok && quantity.Value() > 0 {
+		return int(quantity.Value())
+	}
+	return 0
 }
 
 type yandexPVKey struct {
@@ -449,8 +503,36 @@ func (*Yandex) CombinedDiscountForNode(_ string, _ bool, defaultDiscount, negoti
 func (*Yandex) ClusterManagementPricing() (string, float64, error) {
 	return "", 0, errors.New("Yandex Cloud cluster-management pricing is not implemented")
 }
-func (*Yandex) GpuPricing(map[string]string) (string, error) {
-	return "", errors.New("Yandex Cloud GPU pricing is not implemented")
+func (y *Yandex) GpuPricing(labels map[string]string) (string, error) {
+	instanceType, _ := util.GetInstanceType(labels)
+	platform := y.mapping.Platforms[instanceType]
+	if platform.GPUType == "" {
+		return "", nil
+	}
+	coreFraction := platform.CoreFraction
+	if coreFraction == 0 {
+		coreFraction = 100
+	}
+	if raw := labels[coreFractionLabel]; raw != "" {
+		if parsed, err := strconv.Atoi(raw); err == nil && parsed > 0 {
+			coreFraction = parsed
+		}
+	}
+	preemptible := strings.EqualFold(labels[preemptibleLabel], "true")
+	skus, ok := y.mapping.NodeSKUs[nodeSKUKey(platform.Platform, coreFraction, preemptible)]
+	if !ok {
+		return "", fmt.Errorf("Yandex Cloud: no SKU mapping for GPU platform=%s coreFraction=%d preemptible=%t", platform.Platform, coreFraction, preemptible)
+	}
+	if skus.GPU == "" {
+		return "", fmt.Errorf("Yandex Cloud: GPU platform %s has no GPU SKU mapping", platform.Platform)
+	}
+	y.mu.RLock()
+	price, ok := y.prices[skus.GPU]
+	y.mu.RUnlock()
+	if !ok {
+		return "", fmt.Errorf("Yandex Cloud: mapped GPU price is unavailable; refresh the Billing SKU catalog")
+	}
+	return formatPrice(price.Hourly), nil
 }
 func (*Yandex) NetworkPricing() (*models.Network, error) {
 	return nil, errors.New("Yandex Cloud network pricing is not implemented")

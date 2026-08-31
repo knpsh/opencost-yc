@@ -161,6 +161,165 @@ func TestBuiltInDiskMappings(t *testing.T) {
 	}
 }
 
+func TestBuiltInPlatformMappings(t *testing.T) {
+	tests := []struct {
+		instanceType string
+		platform     string
+		gpuType      string
+		regular      NodeSKUs
+		preemptible  NodeSKUs
+	}{
+		{"standard-v1", "broadwell", "", NodeSKUs{CPU: "dn299ll54t5jt2gojh7e", RAM: "dn2dka206olokggsieuu"}, NodeSKUs{CPU: "dn247qigcq66fq6t3tk5", RAM: "dn2u497ok1kl70on0ta2"}},
+		{"standard-v2", "cascade-lake", "", NodeSKUs{CPU: "dn218a07u143r9v1r5ms", RAM: "dn2fhtcoocq50j1uj4tg"}, NodeSKUs{CPU: "dn2ipnaa10sls6i7osfv", RAM: "dn2sp66rt1l381la6q7p"}},
+		{"standard-v3", "ice-lake", "", NodeSKUs{CPU: "dn2k3vqlk9snp1jv351u", RAM: "dn2ilq72mjc3bej6j74p"}, NodeSKUs{CPU: "dn2e2fphfupugm21k4hv", RAM: "dn26ur5frjbgdek2a0g5"}},
+		{"highfreq-v3", "ice-lake-compute-optimized", "", NodeSKUs{CPU: "dn2lag3718gm9oq8dus2", RAM: "dn23hq90a5khr3o6fivm"}, NodeSKUs{}},
+		{"standard-v4", "zen-4", "", NodeSKUs{CPU: "dn28kn5h601tc7lk5fbu", RAM: "dn29sa4d441spg8aokdn"}, NodeSKUs{CPU: "dn2p24jgv2e06fqoc480", RAM: "dn2vulur9lrq1m6phk7l"}},
+		{"highfreq-v4", "zen-4-compute-optimized", "", NodeSKUs{CPU: "dn2bnom85ie58bpvmtmn", RAM: "dn2dq9mqiklrm87pc1h2"}, NodeSKUs{CPU: "dn2i8hbduq7pn24un5n4", RAM: "dn2tqniq656s6p8nlv0j"}},
+		{"gpu-standard-v1", "broadwell-v100", "NVIDIA V100", NodeSKUs{CPU: "dn2sfcnkn3jlhmq568ac", RAM: "dn2nccae8nra81iqphdn", GPU: "dn2oroscvvtb6sqtt83i"}, NodeSKUs{CPU: "dn2t7aa68lehsmvo5mss", RAM: "dn2k0omvmglh857u60vu", GPU: "dn2lov15qqamcimfv84q"}},
+		{"gpu-standard-v2", "cascade-lake-v100", "NVIDIA V100", NodeSKUs{CPU: "dn2udmu2aa9jm5a8f4ug", RAM: "dn2qtp90p3r8l8vakmm6", GPU: "dn2dlvuk2ecf6hu0kjtl"}, NodeSKUs{CPU: "dn2h4u30djq3jhh8dqh8", RAM: "dn2hotj7skno0turhbq1", GPU: "dn23ppvthcls7rjt5pol"}},
+		{"gpu-standard-v3", "amd-epyc-a100", "NVIDIA A100", NodeSKUs{CPU: "dn28c1erut6m9f9uem08", RAM: "dn21jcm82510bfa6is22", GPU: "dn2395q10bihjmm2b0v6"}, NodeSKUs{CPU: "dn2tvs05nnrib706hgnt", RAM: "dn2m4gusa7m7t4hl6vo2", GPU: "dn211dses9ju3abvq0bs"}},
+		{"gpu-standard-v3i", "gen2", "Gen2", NodeSKUs{CPU: "dn2fd3g50rub98vfprlt", RAM: "dn2h5gi2u2l3bdclrput", GPU: "dn2jfrjoic5h3nh7e6jh"}, NodeSKUs{CPU: "dn2o9fiqemifmch1dq7c", RAM: "dn2mgiub24223fh5mvgv", GPU: "dn2qvcfe8i5vqlrvterc"}},
+		{"gpu-standard-v4", "gpu-platform-v4", "GPU PLATFORM V4", NodeSKUs{CPU: "dn2shelhculi2g5o5ogy", RAM: "dn2pvxnj2udp3unyhz2b", GPU: "dn2qtqtmybqbpyihfxri"}, NodeSKUs{CPU: "dn2kllf2dqxte3qnj7vq", RAM: "dn2puxcaylhhmezidpko", GPU: "dn2azjbhk7j6jwi5agdv"}},
+		{"standard-v3-t4", "ice-lake-t4", "NVIDIA T4", NodeSKUs{CPU: "dn24b7m6qol7tb7tukga", RAM: "dn2lg2hrvbn5b8lm7em4", GPU: "dn20ml8ifdps6m7048an"}, NodeSKUs{CPU: "dn2lsfskfirek2985fnd", RAM: "dn2im0g43iedeohe4sac", GPU: "dn2cpk4mc82b1vib72e5"}},
+		{"standard-v3-t4i", "ice-lake-t4i", "NVIDIA T4i", NodeSKUs{CPU: "dn242l2ivnhdd5so2oga", RAM: "dn290pbmohupnus9ajb7", GPU: "dn2hql9evci880d8jq7i"}, NodeSKUs{CPU: "dn2960mi7268n67o8iae", RAM: "dn25rffeums4j1ku5649", GPU: "dn2qlml2u48bng4jgilh"}},
+	}
+
+	mapping := builtInMapping()
+	if err := validateMapping(mapping); err != nil {
+		t.Fatalf("built-in mapping is invalid: %v", err)
+	}
+	for _, tt := range tests {
+		t.Run(tt.instanceType, func(t *testing.T) {
+			platform := mapping.Platforms[tt.instanceType]
+			if platform.Platform != tt.platform || platform.CoreFraction != 100 || platform.GPUType != tt.gpuType {
+				t.Fatalf("platform mapping = %#v", platform)
+			}
+			if got := mapping.NodeSKUs[nodeSKUKey(tt.platform, 100, false)]; got != tt.regular {
+				t.Fatalf("regular SKUs = %#v, want %#v", got, tt.regular)
+			}
+			if got := mapping.NodeSKUs[nodeSKUKey(tt.platform, 100, true)]; got != tt.preemptible {
+				t.Fatalf("preemptible SKUs = %#v, want %#v", got, tt.preemptible)
+			}
+		})
+	}
+	if got := len(mappedSKUIDs(mapping)); got != 68 {
+		t.Fatalf("mapped SKU count = %d, want 68", got)
+	}
+}
+
+func TestNormalizeHourlyGPUPrice(t *testing.T) {
+	got, err := normalizeHourlyPrice(408.12, "gpu*hour")
+	if err != nil || got != 408.12 {
+		t.Fatalf("normalizeHourlyPrice = %g, %v", got, err)
+	}
+}
+
+func gpuTestMapping() SKUMapping {
+	return SKUMapping{
+		Version: mappingVersion,
+		Platforms: map[string]PlatformMapping{
+			"gpu-standard-v3": {Platform: "amd-epyc-a100", CoreFraction: 100, GPUType: "NVIDIA A100"},
+		},
+		NodeSKUs: map[string]NodeSKUs{
+			"amd-epyc-a100/100/regular":     {CPU: "cpu", RAM: "ram", GPU: "gpu"},
+			"amd-epyc-a100/100/preemptible": {CPU: "spot-cpu", RAM: "spot-ram", GPU: "spot-gpu"},
+		},
+		DiskSKUs:       map[string]string{},
+		StorageClasses: map[string]string{},
+	}
+}
+
+func TestGPUNodePricing(t *testing.T) {
+	provider := &Yandex{
+		mapping: gpuTestMapping(),
+		prices: map[string]unitPrice{
+			"cpu": {Hourly: 1}, "ram": {Hourly: 2}, "gpu": {Hourly: 10},
+		},
+	}
+	node := &clustercache.Node{
+		Labels:         map[string]string{"node.kubernetes.io/instance-type": "gpu-standard-v3"},
+		SpecProviderID: "yandex://gpu-node",
+		Status: v1.NodeStatus{Capacity: v1.ResourceList{
+			v1.ResourceCPU: resource.MustParse("4"), v1.ResourceMemory: resource.MustParse("8Gi"),
+			v1.ResourceName(nvidiaGPUResource): resource.MustParse("2"),
+		}},
+	}
+	key := provider.GetKey(node.Labels, node)
+	if key.GPUType() != "NVIDIA A100" || key.GPUCount() != 2 {
+		t.Fatalf("GPU key = type %q count %d", key.GPUType(), key.GPUCount())
+	}
+	price, _, err := provider.NodePricing(key)
+	if err != nil {
+		t.Fatalf("NodePricing: %v", err)
+	}
+	if price.Cost != "40" || price.GPU != "2" || price.GPUName != "NVIDIA A100" || price.GPUCost != "10" {
+		t.Fatalf("GPU node price = %#v", price)
+	}
+}
+
+func TestTimeSlicedGPUUsesPhysicalCount(t *testing.T) {
+	provider := &Yandex{mapping: gpuTestMapping()}
+	node := &clustercache.Node{
+		Labels: map[string]string{
+			"node.kubernetes.io/instance-type": "gpu-standard-v3",
+			nvidiaGPUReplicasLabel:             "8",
+			nvidiaGPUCountLabel:                "2",
+		},
+		Status: v1.NodeStatus{Capacity: v1.ResourceList{
+			v1.ResourceName(nvidiaGPUResource): resource.MustParse("16"),
+		}},
+	}
+	if got := provider.GetKey(node.Labels, node).GPUCount(); got != 2 {
+		t.Fatalf("physical GPU count = %d, want 2", got)
+	}
+}
+
+func TestGPUNodePricingRejectsMissingCapacity(t *testing.T) {
+	provider := &Yandex{
+		mapping: gpuTestMapping(),
+		prices: map[string]unitPrice{
+			"cpu": {Hourly: 1}, "ram": {Hourly: 2}, "gpu": {Hourly: 10},
+		},
+	}
+	node := &clustercache.Node{
+		Labels: map[string]string{"node.kubernetes.io/instance-type": "gpu-standard-v3"},
+		Status: v1.NodeStatus{Capacity: v1.ResourceList{
+			v1.ResourceCPU: resource.MustParse("4"), v1.ResourceMemory: resource.MustParse("8Gi"),
+		}},
+	}
+	if _, _, err := provider.NodePricing(provider.GetKey(node.Labels, node)); err == nil {
+		t.Fatal("expected missing GPU capacity error")
+	}
+}
+
+func TestGpuPricing(t *testing.T) {
+	provider := &Yandex{
+		mapping: gpuTestMapping(),
+		prices:  map[string]unitPrice{"gpu": {Hourly: 10}, "spot-gpu": {Hourly: 4}},
+	}
+	labels := map[string]string{"node.kubernetes.io/instance-type": "gpu-standard-v3"}
+	if got, err := provider.GpuPricing(labels); err != nil || got != "10" {
+		t.Fatalf("regular GpuPricing = %q, %v", got, err)
+	}
+	labels[preemptibleLabel] = "true"
+	if got, err := provider.GpuPricing(labels); err != nil || got != "4" {
+		t.Fatalf("preemptible GpuPricing = %q, %v", got, err)
+	}
+	if got, err := provider.GpuPricing(map[string]string{"node.kubernetes.io/instance-type": "standard-v3"}); err != nil || got != "" {
+		t.Fatalf("CPU-only GpuPricing = %q, %v", got, err)
+	}
+}
+
+func TestValidateMappingRejectsIncompleteGPU(t *testing.T) {
+	mapping := gpuTestMapping()
+	node := mapping.NodeSKUs["amd-epyc-a100/100/regular"]
+	node.GPU = ""
+	mapping.NodeSKUs["amd-epyc-a100/100/regular"] = node
+	if err := validateMapping(mapping); err == nil {
+		t.Fatal("expected missing GPU SKU validation error")
+	}
+}
+
 func TestNodeAndPVPricing(t *testing.T) {
 	provider := &Yandex{
 		mapping: testMapping(),

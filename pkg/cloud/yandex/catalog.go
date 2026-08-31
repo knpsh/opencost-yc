@@ -129,7 +129,7 @@ func activePricingVersion(versions []*billing.PricingVersion, preferContract boo
 
 func normalizeHourlyPrice(amount float64, unit string) (float64, error) {
 	switch strings.ToLower(strings.TrimSpace(unit)) {
-	case "core*hour", "gbyte*hour", "gb*hour", "gibibyte*hour":
+	case "core*hour", "gpu*hour", "gbyte*hour", "gb*hour", "gibibyte*hour":
 		return amount, nil
 	case "gbyte*month", "gb*month", "gibibyte*month":
 		return amount / hoursPerMonth, nil
