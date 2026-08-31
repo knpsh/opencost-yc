@@ -16,10 +16,20 @@ the Yandex Cloud Go SDK creates and renews short-lived IAM tokens.
 | `YC_PRICING_REFRESH_INTERVAL` | `6h` | Catalog refresh interval. |
 
 The built-in version 1 mapping supports `standard-v3` (Intel Ice Lake) at 100%
-core fraction, regular and preemptible CPU/RAM prices, and `network-hdd`
-storage (`yc-network-hdd`). A missing core-fraction label is treated as 100%.
-Unsupported platforms, fractions, disks, and non-flat Billing rates return an
-explicit pricing error.
+core fraction, regular and preemptible CPU/RAM prices, and all four persistent
+disk types exposed by the Yandex Cloud CSI driver:
+
+| Disk type | StorageClass | Billing SKU ID |
+| --- | --- | --- |
+| `network-ssd` | `yc-network-ssd` | `dn27ajm6m8mnfcshbi61` |
+| `network-hdd` | `yc-network-hdd` | `dn2al287u6jr3a710u8g` |
+| `network-ssd-nonreplicated` | `yc-network-ssd-nonreplicated` | `dn24kdllggk8ahsol15g` |
+| `network-ssd-io-m3` | `yc-network-ssd-io-m3` | `dn2bl3v71k1mej7andmc` |
+
+A missing core-fraction label is treated as 100%. Unsupported platforms,
+fractions, disks, and non-flat Billing rates return an explicit pricing error.
+The SKU IDs are stable mapping inputs; prices are always read from the active
+Billing catalog rather than embedded in the image.
 
 Mapping files are strict YAML and merge into the built-in mapping. For example:
 

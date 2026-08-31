@@ -45,10 +45,16 @@ func builtInMapping() SKUMapping {
 			},
 		},
 		DiskSKUs: map[string]string{
-			"network-hdd": "dn2al287u6jr3a710u8g",
+			"network-ssd":               "dn27ajm6m8mnfcshbi61",
+			"network-hdd":               "dn2al287u6jr3a710u8g",
+			"network-ssd-nonreplicated": "dn24kdllggk8ahsol15g",
+			"network-ssd-io-m3":         "dn2bl3v71k1mej7andmc",
 		},
 		StorageClasses: map[string]string{
-			"yc-network-hdd": "network-hdd",
+			"yc-network-ssd":               "network-ssd",
+			"yc-network-hdd":               "network-hdd",
+			"yc-network-ssd-nonreplicated": "network-ssd-nonreplicated",
+			"yc-network-ssd-io-m3":         "network-ssd-io-m3",
 		},
 	}
 }

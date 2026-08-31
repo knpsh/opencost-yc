@@ -117,6 +117,50 @@ func TestLoadMappingMergesOverride(t *testing.T) {
 	}
 }
 
+func TestBuiltInDiskMappings(t *testing.T) {
+	tests := []struct {
+		diskType     string
+		storageClass string
+		skuID        string
+	}{
+		{diskType: "network-ssd", storageClass: "yc-network-ssd", skuID: "dn27ajm6m8mnfcshbi61"},
+		{diskType: "network-hdd", storageClass: "yc-network-hdd", skuID: "dn2al287u6jr3a710u8g"},
+		{diskType: "network-ssd-nonreplicated", storageClass: "yc-network-ssd-nonreplicated", skuID: "dn24kdllggk8ahsol15g"},
+		{diskType: "network-ssd-io-m3", storageClass: "yc-network-ssd-io-m3", skuID: "dn2bl3v71k1mej7andmc"},
+	}
+
+	mapping := builtInMapping()
+	provider := &Yandex{mapping: mapping}
+	for _, tt := range tests {
+		t.Run(tt.diskType, func(t *testing.T) {
+			if got := mapping.DiskSKUs[tt.diskType]; got != tt.skuID {
+				t.Fatalf("disk SKU = %q, want %q", got, tt.skuID)
+			}
+			if got := mapping.StorageClasses[tt.storageClass]; got != tt.diskType {
+				t.Fatalf("storage class disk type = %q, want %q", got, tt.diskType)
+			}
+
+			pv := &clustercache.PersistentVolume{
+				Spec: v1.PersistentVolumeSpec{
+					StorageClassName: tt.storageClass,
+					PersistentVolumeSource: v1.PersistentVolumeSource{CSI: &v1.CSIPersistentVolumeSource{
+						VolumeHandle: "disk-id",
+					}},
+				},
+			}
+			fromStorageClass := provider.GetPVKey(pv, nil, "ru-central1").(*yandexPVKey)
+			if fromStorageClass.diskType != tt.diskType {
+				t.Fatalf("storage class resolved disk type = %q, want %q", fromStorageClass.diskType, tt.diskType)
+			}
+
+			fromParameters := provider.GetPVKey(pv, map[string]string{"type": tt.diskType}, "ru-central1").(*yandexPVKey)
+			if fromParameters.diskType != tt.diskType {
+				t.Fatalf("CSI parameter resolved disk type = %q, want %q", fromParameters.diskType, tt.diskType)
+			}
+		})
+	}
+}
+
 func TestNodeAndPVPricing(t *testing.T) {
 	provider := &Yandex{
 		mapping: testMapping(),
