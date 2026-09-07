@@ -1,8 +1,12 @@
 # Yandex Cloud pricing provider
 
-This package prices Yandex Cloud Kubernetes nodes and persistent volumes from
-the Billing SKU API. Authentication uses an authorized service-account key;
+This package prices Yandex Cloud Kubernetes nodes, persistent volumes, and
+Managed Service for Kubernetes masters from the Billing SKU API. Authentication uses an authorized service-account key;
 the Yandex Cloud Go SDK creates and renews short-lived IAM tokens.
+
+The service account needs Billing catalog access and the `k8s.viewer` role on
+the folder containing the cluster. The latter permits read-only MKS node-group,
+cluster, and resource-preset discovery.
 
 ## Runtime settings
 
@@ -14,6 +18,22 @@ the Yandex Cloud Go SDK creates and renews short-lived IAM tokens.
 | `YC_BILLING_ACCOUNT_ID` | none | Optional billing account for contract prices. |
 | `YC_SKU_MAPPING_FILE` | none | Optional partial YAML override of the built-in mapping. |
 | `YC_PRICING_REFRESH_INTERVAL` | `6h` | Catalog refresh interval. |
+| `YC_MKS_REFRESH_INTERVAL` | `1m` | MKS master configuration refresh interval. |
+
+## Managed Kubernetes master pricing
+
+The provider discovers the Yandex cluster ID from the
+`yandex.cloud/node-group-id` labels already present on cluster nodes. It reads
+the current per-master resources and master count from the MKS API and resolves
+the fixed or autoscaling-minimum resource preset. No Yandex cluster ID setting
+is required.
+
+Master hourly cost is the number of masters multiplied by the billable vCPU and
+RAM unit prices. Current CPU and RAM are independently floored at the selected
+minimum preset, and a stopped cluster reports zero. Only 100% master core
+fraction is supported. The last successful price is retained after a transient
+MKS failure. Historical master autoscaling before this metric is deployed
+cannot be reconstructed.
 
 The built-in version 1 mapping supports 100% core fraction for the following
 Compute Cloud platforms. A missing core-fraction label is treated as 100%.
@@ -74,4 +94,7 @@ diskSKUs:
   network-ssd: disk-sku-id
 storageClasses:
   yc-network-ssd: network-ssd
+masterSKUs:
+  cpu: master-cpu-sku-id
+  ram: master-ram-sku-id
 ```

@@ -43,16 +43,23 @@ type Yandex struct {
 	ClusterRegion    string
 	ClusterAccountID string
 
-	mu              sync.RWMutex
-	client          skuClient
-	sdk             *ycsdk.SDK
-	mapping         SKUMapping
-	prices          map[string]unitPrice
-	lastRefresh     time.Time
-	lastError       string
-	refreshInterval time.Duration
-	refreshOnce     sync.Once
-	now             func() time.Time
+	mu                 sync.RWMutex
+	client             skuClient
+	nodeGroups         nodeGroupClient
+	clusters           clusterClient
+	resourcePresets    resourcePresetClient
+	sdk                *ycsdk.SDK
+	mapping            SKUMapping
+	prices             map[string]unitPrice
+	lastRefresh        time.Time
+	lastError          string
+	refreshInterval    time.Duration
+	refreshOnce        sync.Once
+	mksRefreshInterval time.Duration
+	mksRefreshOnce     sync.Once
+	mksState           mksPricingState
+	mksPresets         map[string]masterResources
+	now                func() time.Time
 }
 
 func New(cache clustercache.ClusterCache, config models.ProviderConfig, region, accountID string) (*Yandex, error) {
@@ -67,15 +74,24 @@ func New(cache clustercache.ClusterCache, config models.ProviderConfig, region, 
 			return nil, fmt.Errorf("invalid %s %q", env.YandexPricingRefreshIntervalEnvVar, value)
 		}
 	}
+	mksRefreshInterval := defaultMKSRefresh
+	if value := strings.TrimSpace(os.Getenv(env.YandexMKSRefreshIntervalEnvVar)); value != "" {
+		mksRefreshInterval, err = time.ParseDuration(value)
+		if err != nil || mksRefreshInterval <= 0 {
+			return nil, fmt.Errorf("invalid %s %q", env.YandexMKSRefreshIntervalEnvVar, value)
+		}
+	}
 	return &Yandex{
-		Clientset:        cache,
-		Config:           config,
-		ClusterRegion:    region,
-		ClusterAccountID: accountID,
-		mapping:          mapping,
-		prices:           map[string]unitPrice{},
-		refreshInterval:  refreshInterval,
-		now:              time.Now,
+		Clientset:          cache,
+		Config:             config,
+		ClusterRegion:      region,
+		ClusterAccountID:   accountID,
+		mapping:            mapping,
+		prices:             map[string]unitPrice{},
+		refreshInterval:    refreshInterval,
+		mksRefreshInterval: mksRefreshInterval,
+		mksPresets:         map[string]masterResources{},
+		now:                time.Now,
 	}, nil
 }
 
@@ -103,6 +119,9 @@ func (y *Yandex) ensureClient(ctx context.Context) (skuClient, error) {
 	}
 	y.sdk = sdk
 	y.client = sdk.Billing().Sku()
+	y.nodeGroups = sdk.Kubernetes().NodeGroup()
+	y.clusters = sdk.Kubernetes().Cluster()
+	y.resourcePresets = sdk.Kubernetes().ResourcePreset()
 	return y.client, nil
 }
 
@@ -130,6 +149,7 @@ func (y *Yandex) DownloadPricingData() error {
 		y.mu.Unlock()
 	}
 	y.startRefreshLoop()
+	y.startMKSRefreshLoop()
 	return err
 }
 
@@ -402,23 +422,32 @@ func (y *Yandex) AllNodePricing() (interface{}, error) {
 func (y *Yandex) PricingSourceSummary() interface{} {
 	y.mu.RLock()
 	defer y.mu.RUnlock()
-	return map[string]interface{}{"prices": y.prices, "lastRefresh": y.lastRefresh, "currency": billingCurrency()}
+	return map[string]interface{}{
+		"prices": y.prices, "lastRefresh": y.lastRefresh, "currency": billingCurrency(), "lastError": y.lastError,
+		"mks": y.mksState,
+	}
 }
 
 func (y *Yandex) PricingSourceStatus() map[string]*models.PricingSource {
 	y.mu.RLock()
 	defer y.mu.RUnlock()
-	return map[string]*models.PricingSource{PricingSourceName: {
-		Name: PricingSourceName, Enabled: true, Available: len(y.prices) > 0, Error: y.lastError,
-	}}
+	return map[string]*models.PricingSource{
+		PricingSourceName: {
+			Name: PricingSourceName, Enabled: true, Available: len(y.prices) > 0, Error: y.lastError,
+		},
+		MKSPricingSourceName: {
+			Name: MKSPricingSourceName, Enabled: true, Available: y.mksState.Available, Error: y.mksState.LastError,
+		},
+	}
 }
 
 func (y *Yandex) ServiceAccountStatus() *models.ServiceAccountStatus {
 	y.mu.RLock()
 	defer y.mu.RUnlock()
-	return &models.ServiceAccountStatus{Checks: []*models.ServiceAccountCheck{{
-		Message: serviceAccountCheckName, Status: y.client != nil && y.lastError == "", AdditionalInfo: y.lastError,
-	}}}
+	return &models.ServiceAccountStatus{Checks: []*models.ServiceAccountCheck{
+		{Message: serviceAccountCheckName + " (Billing)", Status: y.client != nil && y.lastError == "", AdditionalInfo: y.lastError},
+		{Message: serviceAccountCheckName + " (MKS)", Status: y.mksState.Available && y.mksState.LastError == "", AdditionalInfo: y.mksState.LastError},
+	}}
 }
 
 func (y *Yandex) ClusterInfo() (map[string]string, error) {
@@ -500,8 +529,16 @@ func (*Yandex) ApplyReservedInstancePricing(map[string]*models.Node) {}
 func (*Yandex) CombinedDiscountForNode(_ string, _ bool, defaultDiscount, negotiatedDiscount float64) float64 {
 	return 1.0 - ((1.0 - defaultDiscount) * (1.0 - negotiatedDiscount))
 }
-func (*Yandex) ClusterManagementPricing() (string, float64, error) {
-	return "", 0, errors.New("Yandex Cloud cluster-management pricing is not implemented")
+func (y *Yandex) ClusterManagementPricing() (string, float64, error) {
+	y.mu.RLock()
+	defer y.mu.RUnlock()
+	if !y.mksState.Available {
+		if y.mksState.LastError != "" {
+			return mksProvisioner, 0, errors.New(y.mksState.LastError)
+		}
+		return mksProvisioner, 0, errors.New("Yandex Cloud MKS master pricing is not available yet")
+	}
+	return mksProvisioner, y.mksState.HourlyCost, nil
 }
 func (y *Yandex) GpuPricing(labels map[string]string) (string, error) {
 	instanceType, _ := util.GetInstanceType(labels)

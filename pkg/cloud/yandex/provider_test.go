@@ -59,6 +59,7 @@ func testMapping() SKUMapping {
 		NodeSKUs:       map[string]NodeSKUs{"ice-lake/100/regular": {CPU: "cpu", RAM: "ram"}},
 		DiskSKUs:       map[string]string{"network-hdd": "disk"},
 		StorageClasses: map[string]string{"yc-network-hdd": "network-hdd"},
+		MasterSKUs:     MasterSKUs{CPU: "cpu", RAM: "ram"},
 	}
 }
 
@@ -114,6 +115,21 @@ func TestLoadMappingMergesOverride(t *testing.T) {
 	}
 	if mapping.Platforms["standard-v3"].Platform != "ice-lake" || mapping.Platforms["custom-v1"].CoreFraction != 50 {
 		t.Fatalf("mapping override was not merged: %#v", mapping.Platforms)
+	}
+}
+
+func TestLoadMappingMergesMasterSKUOverride(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "mapping.yaml")
+	contents := []byte("version: 1\nmasterSKUs:\n  cpu: kz-master-cpu\n")
+	if err := os.WriteFile(path, contents, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	mapping, err := loadMapping(path)
+	if err != nil {
+		t.Fatalf("loadMapping: %v", err)
+	}
+	if mapping.MasterSKUs.CPU != "kz-master-cpu" || mapping.MasterSKUs.RAM != "dn2u6o8avnm6b5tb8klu" {
+		t.Fatalf("master SKU override was not partially merged: %#v", mapping.MasterSKUs)
 	}
 }
 
@@ -202,8 +218,11 @@ func TestBuiltInPlatformMappings(t *testing.T) {
 			}
 		})
 	}
-	if got := len(mappedSKUIDs(mapping)); got != 68 {
-		t.Fatalf("mapped SKU count = %d, want 68", got)
+	if mapping.MasterSKUs != (MasterSKUs{CPU: "dn2pjj9vapo7724rik0b", RAM: "dn2u6o8avnm6b5tb8klu"}) {
+		t.Fatalf("master SKUs = %#v", mapping.MasterSKUs)
+	}
+	if got := len(mappedSKUIDs(mapping)); got != 70 {
+		t.Fatalf("mapped SKU count = %d, want 70", got)
 	}
 }
 
@@ -226,6 +245,7 @@ func gpuTestMapping() SKUMapping {
 		},
 		DiskSKUs:       map[string]string{},
 		StorageClasses: map[string]string{},
+		MasterSKUs:     MasterSKUs{CPU: "cpu", RAM: "ram"},
 	}
 }
 

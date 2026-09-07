@@ -22,12 +22,18 @@ type NodeSKUs struct {
 	GPU string `json:"gpu,omitempty" yaml:"gpu,omitempty"`
 }
 
+type MasterSKUs struct {
+	CPU string `json:"cpu" yaml:"cpu"`
+	RAM string `json:"ram" yaml:"ram"`
+}
+
 type SKUMapping struct {
 	Version        int                        `json:"version" yaml:"version"`
 	Platforms      map[string]PlatformMapping `json:"platforms" yaml:"platforms"`
 	NodeSKUs       map[string]NodeSKUs        `json:"nodeSKUs" yaml:"nodeSKUs"`
 	DiskSKUs       map[string]string          `json:"diskSKUs" yaml:"diskSKUs"`
 	StorageClasses map[string]string          `json:"storageClasses" yaml:"storageClasses"`
+	MasterSKUs     MasterSKUs                 `json:"masterSKUs" yaml:"masterSKUs"`
 }
 
 func builtInMapping() SKUMapping {
@@ -176,6 +182,10 @@ func builtInMapping() SKUMapping {
 			"yc-network-ssd-nonreplicated": "network-ssd-nonreplicated",
 			"yc-network-ssd-io-m3":         "network-ssd-io-m3",
 		},
+		MasterSKUs: MasterSKUs{
+			CPU: "dn2pjj9vapo7724rik0b",
+			RAM: "dn2u6o8avnm6b5tb8klu",
+		},
 	}
 }
 
@@ -213,6 +223,12 @@ func mergeMapping(target *SKUMapping, override SKUMapping) {
 	for key, value := range override.StorageClasses {
 		target.StorageClasses[key] = value
 	}
+	if strings.TrimSpace(override.MasterSKUs.CPU) != "" {
+		target.MasterSKUs.CPU = override.MasterSKUs.CPU
+	}
+	if strings.TrimSpace(override.MasterSKUs.RAM) != "" {
+		target.MasterSKUs.RAM = override.MasterSKUs.RAM
+	}
 }
 
 func validateMapping(mapping SKUMapping) error {
@@ -249,6 +265,9 @@ func validateMapping(mapping SKUMapping) error {
 			return fmt.Errorf("Yandex disk SKU mappings require non-empty disk type and SKU ID")
 		}
 	}
+	if strings.TrimSpace(mapping.MasterSKUs.CPU) == "" || strings.TrimSpace(mapping.MasterSKUs.RAM) == "" {
+		return fmt.Errorf("Yandex master SKU mapping requires CPU and RAM SKU IDs")
+	}
 	return nil
 }
 
@@ -272,5 +291,7 @@ func mappedSKUIDs(mapping SKUMapping) map[string]struct{} {
 	for _, id := range mapping.DiskSKUs {
 		ids[id] = struct{}{}
 	}
+	ids[mapping.MasterSKUs.CPU] = struct{}{}
+	ids[mapping.MasterSKUs.RAM] = struct{}{}
 	return ids
 }

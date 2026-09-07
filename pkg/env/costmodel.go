@@ -46,6 +46,7 @@ const (
 	YandexServiceAccountKeyFileEnvVar  = "YC_SERVICE_ACCOUNT_KEY_FILE"
 	YandexSKUMappingFileEnvVar         = "YC_SKU_MAPPING_FILE"
 	YandexPricingRefreshIntervalEnvVar = "YC_PRICING_REFRESH_INTERVAL"
+	YandexMKSRefreshIntervalEnvVar     = "YC_MKS_REFRESH_INTERVAL"
 
 	// Azure rate card filter environment variables
 
